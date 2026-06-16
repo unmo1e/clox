@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "common.h"
 #include "compiler.h"
@@ -46,6 +47,7 @@ static void statement();
 static void printStatement();
 static void expressionStatement();
 static void varDeclaration();
+static void block();
 
 // helpers
 static bool match(TokenType type);
@@ -96,6 +98,17 @@ ParseRule rules[]       = {
 };
 
 typedef struct {
+  Token name;
+  int depth;
+} Local;
+
+typedef struct {
+  Local locals[UINT8_COUNT];
+  int localCount;
+  int scopeDepth;
+} Compiler;
+
+typedef struct {
   Token current;
   Token previous;
   bool hadError;
@@ -103,6 +116,7 @@ typedef struct {
 } Parser;
 
 Parser parser;
+Compiler *current = NULL;
 Chunk *compilingChunk;
 
 static Chunk *currentChunk();
@@ -112,6 +126,73 @@ static void errorAt(Token* token, const char* message);
 static void advance();
 static void consume(TokenType type, const char* message);
 static void emitByte(uint8_t byte);
+
+static void initCompiler(Compiler *compiler) {
+  compiler->localCount = 0;
+  compiler->scopeDepth = 0;
+  current = compiler;
+}
+
+static bool identifiersEqual(Token *a, Token *b) {
+  if(a->length != b->length)
+    return false;
+  return memcmp(a->start, b->start, a->length) == 0;
+}
+
+static void beginScope() {
+  current->scopeDepth++;
+}
+
+static void endScope() {
+  current->scopeDepth--;
+
+  while(current->localCount > 0 &&
+        current->locals[current->localCount - 1].depth > current->scopeDepth) {
+    emitByte(OP_POP);
+    current->localCount--;
+  }
+}
+
+static void addLocal(Token name) {
+  if(current->localCount == UINT8_COUNT) {
+    error("Too many local variables.");
+    return;
+  }
+  
+  Local *local = &current->locals[current->localCount++];
+  local->name = name;
+  // -1 means it is declared but not defined
+  // replaced with actual scope depth in defineVariable()
+  local->depth = -1;
+}
+
+static int resolveLocal(Compiler *compiler, Token *name) {
+  for(int i = compiler->localCount - 1; i >= 0; i--) {
+    Local *local = &compiler->locals[i];
+    if(identifiersEqual(name, &local->name)) {
+      if(local->depth == -1) error("Can't read local var in its initialization.");
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+static void declareVariable() {
+  if(current->scopeDepth == 0)
+    return;
+
+  Token *name = &parser.previous;
+  for(int i = current->localCount - 1; i >= 0; i--) {
+    Local *local = &current->locals[i];
+    if(local->depth != -1 && local->depth < current->scopeDepth)
+      break;
+
+    if(identifiersEqual(name, &local->name))
+      error("Already a variable with this name in this scope.");
+  }
+  addLocal(*name);
+}
 
 static void errorAtCurrent(const char *message) {
   errorAt(&parser.current, message);
@@ -282,14 +363,23 @@ static void literal(bool canAssign) {
 }
 
 static void namedVariable(Token name, bool canAssign) {
-  uint8_t arg = identifierConstant(&name);
+  uint8_t getOp, setOp;
+  int arg = resolveLocal(current, &name);
+  if(arg != -1) {
+    getOp = OP_GET_LOCAL;
+    setOp = OP_SET_LOCAL;
+  } else {
+    arg = identifierConstant(&name);
+    getOp = OP_GET_GLOBAL;
+    setOp = OP_SET_GLOBAL;
+  }
 
   // check for if want to set the variable or get it
   if(canAssign && match(TOKEN_EQUAL)) {
     expression();
-    emitBytes(OP_SET_GLOBAL, arg);
+    emitBytes(setOp, (uint8_t)arg);
   } else {
-    emitBytes(OP_GET_GLOBAL, arg);
+    emitBytes(getOp, (uint8_t)arg);
   }
 }
 
@@ -348,10 +438,22 @@ static uint8_t identifierConstant(Token *name) {
 
 static uint8_t parseVariable(const char *errorMessage) {
   consume(TOKEN_IDENTIFIER, errorMessage);
+
+  declareVariable();
+  if(current->scopeDepth > 0) return 0;
+  
   return identifierConstant(&parser.previous);
 }
 
+static void markInitialized() {
+  current->locals[current->localCount - 1].depth = current->scopeDepth;
+}
+
 static void defineVariable(uint8_t global) {
+  if(current->scopeDepth > 0) {
+    markInitialized();
+    return;
+  }
   emitBytes(OP_DEFINE_GLOBAL, global);
 }
 
@@ -370,9 +472,21 @@ static void varDeclaration() {
 static void statement() {
   if(match(TOKEN_PRINT)) {
     printStatement();
+  } else if(match(TOKEN_LEFT_BRACE)) {
+    beginScope();
+    block();
+    endScope();
   } else {
     expressionStatement();
   }
+}
+
+static void block() {
+  while(!check(TOKEN_RIGHT_BRACE) && !check(TOKEN_EOF)) {
+    declaraction();
+  }
+
+  consume(TOKEN_RIGHT_BRACE, "Expect '}' after block");
 }
 
 static void printStatement() {
@@ -389,6 +503,8 @@ static void expressionStatement() {
 
 bool compile(const char *source, Chunk *chunk) {
   initScanner(source);
+  Compiler compiler;
+  initCompiler(&compiler);
   compilingChunk = chunk;
 
   parser.hadError = false;

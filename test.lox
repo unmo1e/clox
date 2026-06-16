@@ -1,10 +1,4 @@
-var a = 1;
-var b = 1;
-
-for(var i = 0; i < 10; i = i + 1) {
-  print a + b;
-
-  var temp = a + b;
-  a = b;
-  b = temp;
+{
+  var a = "first";
+  var a = "second";
 }
