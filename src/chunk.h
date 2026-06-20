@@ -2,7 +2,6 @@
 #define clox_chunk_h
 
 #include "common.h"
-#include "memory.h"
 #include "value.h"
 
 typedef enum {
@@ -27,9 +26,13 @@ typedef enum {
   OP_SET_GLOBAL,
   OP_GET_LOCAL,
   OP_SET_LOCAL,
-  
+
+  OP_JUMP_IF_FALSE,
+  OP_JUMP,
+  OP_LOOP,
   OP_POP,
   OP_PRINT,
+  OP_CALL,
   OP_RETURN
 } OpCode;
 
