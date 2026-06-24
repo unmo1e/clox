@@ -1,11 +1,33 @@
-fun makeClosure(value) {
-  fun closure() {
-    print value;
+fun vec() {
+  var x = 10;
+  var y = 10;
+
+  fun get(name) {
+    if(name == "x")
+      return x;
+    else
+      return y;
   }
-  return closure;
+
+  fun set(name, val) {
+    if(name == "x")
+      x = val;
+    else
+      y = val;
+  }
+
+  fun method(name) {
+    if(name == "get")
+      return get;
+    else
+      return set;
+  }
+  
+  return method;
 }
 
-var doughnut = makeClosure("doughnut");
-var bagel = makeClosure("bagel");
-doughnut();
-bagel();
+var v1 = vec();
+print v1("get")("x");
+
+v1("set")("x", 20);
+print v1("get")("x");
