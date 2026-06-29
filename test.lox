@@ -1,33 +1,32 @@
 fun vec() {
-  var x = 10;
-  var y = 10;
-
-  fun get(name) {
-    if(name == "x")
+  var x;
+  var y;
+  
+  fun get(dim) {
+    if(dim == "x")
       return x;
     else
       return y;
   }
 
-  fun set(name, val) {
-    if(name == "x")
+  fun set(dim, val) {
+    if(dim == "x")
       x = val;
     else
       y = val;
   }
 
-  fun method(name) {
-    if(name == "get")
+  fun api(x) {
+    if(x == "get")
       return get;
     else
       return set;
   }
-  
-  return method;
+
+  return api;
 }
 
 var v1 = vec();
-print v1("get")("x");
 
-v1("set")("x", 20);
+v1("set")("x", 10);
 print v1("get")("x");

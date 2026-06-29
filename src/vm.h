@@ -19,14 +19,25 @@ typedef struct {
   // function calls
   CallFrame frames[FRAMES_MAX];
   int frameCount;
+
   // stack
   Value stack[STACK_MAX];
   Value *stackTop;
+
   // objects
   Table globals;
   Table strings;
   ObjUpvalue *openUpvalues;
   Obj *objects;
+
+  // GC parameters to control throughput and latency
+  size_t bytesAllocated;
+  size_t nextGC;
+  
+  // gray stack (for GC)
+  int grayCount;
+  int grayCapacity;
+  Obj **grayStack;
 } VM;
 
 typedef enum {
