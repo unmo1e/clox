@@ -1,32 +1,14 @@
-fun vec() {
-  var x;
-  var y;
-  
-  fun get(dim) {
-    if(dim == "x")
-      return x;
-    else
-      return y;
-  }
+class Oops {
+  init() {
+    this.x = "Haha";
+    fun f() {
+      print "this is not a method " + this.x;
+    }
 
-  fun set(dim, val) {
-    if(dim == "x")
-      x = val;
-    else
-      y = val;
+    this.field = f;
   }
-
-  fun api(x) {
-    if(x == "get")
-      return get;
-    else
-      return set;
-  }
-
-  return api;
 }
 
-var v1 = vec();
-
-v1("set")("x", 10);
-print v1("get")("x");
+var oops = Oops();
+// oops.x = "test";
+oops.field();

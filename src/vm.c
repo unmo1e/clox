@@ -33,6 +33,13 @@ static void concatenate() {
   push(OBJ_VAL(result));
 }
 
+static void defineMethod(ObjString *name) {
+  Value method = peek(0);
+  ObjClass *klass = AS_CLASS(peek(1));
+  tableSet(&klass->methods, name, method);
+  pop();
+}
+
 static void defineNative(const char *name, NativeFn function) {
   push(OBJ_VAL(copyString(name, (int)strlen(name))));
   push(OBJ_VAL(newNative(function)));
@@ -94,6 +101,23 @@ static bool call(ObjClosure *closure, int argCount) {
 static bool callValue(Value callee, int argCount) {
   if(IS_OBJ(callee)) {
     switch(OBJ_TYPE(callee)) {
+    case OBJ_BOUND_METHOD: {
+      ObjBoundMethod *bound = AS_BOUND_METHOD(callee);
+      vm.stackTop[-argCount - 1] = bound->receiver;
+      return call(bound->method, argCount);
+    }
+    case OBJ_CLASS: {
+      ObjClass *klass = AS_CLASS(callee);
+      vm.stackTop[-argCount - 1] = OBJ_VAL(newInstance(klass));
+      Value initializer;
+      if(tableGet(&klass->methods, vm.initString, &initializer))
+        return call(AS_CLOSURE(initializer), argCount);
+      else if(argCount != 0) {
+        runtimeError("Expected 0 arguments but god %d", argCount);
+        return false;
+      }
+      return true;
+    }
     case OBJ_CLOSURE:
       return call(AS_CLOSURE(callee), argCount);
     case OBJ_NATIVE: {
@@ -110,6 +134,49 @@ static bool callValue(Value callee, int argCount) {
 
   runtimeError("Can only call functions and classes");
   return false;
+}
+
+static bool invokeFromClass(ObjClass *klass, ObjString *name, int argCount) {
+  Value method;
+  if(!tableGet(&klass->methods, name, &method)) {
+    runtimeError("Undefined property '%s'", name->chars);
+    return false;
+  }
+  return call(AS_CLOSURE(method), argCount);
+}
+
+static bool invoke(ObjString *name, int argCount) {
+  Value receiver = peek(argCount);
+  if(!IS_INSTANCE(receiver)) {
+    runtimeError("Only instances have methods");
+    return false;
+  }
+  
+  ObjInstance *instance = AS_INSTANCE(receiver);
+
+  // in lox, fields have priority over methods
+  // so if field with same name also exists, we run call
+  // that instead
+  Value value;
+  if(tableGet(&instance->fields, name, &value)) {
+    vm.stackTop[-argCount - 1] = value;
+    return callValue(value, argCount);
+  }
+  
+  return invokeFromClass(instance->klass, name, argCount);
+}
+
+static bool bindMethod(ObjClass *klass, ObjString *name) {
+  Value method;
+  if(!tableGet(&klass->methods, name, &method)) {
+    runtimeError("Undefined property %s", name->chars);
+    return false;
+  }
+
+  ObjBoundMethod *bound = newBoundMethod(peek(0), AS_CLOSURE(method));
+  pop();
+  push(OBJ_VAL(bound));
+  return true;
 }
 
 // open upvalues are sorted from
@@ -256,6 +323,14 @@ static InterpretResult run() {
       *frame->closure->upvalues[slot]->location = peek(0);
       break;
     }
+    case OP_INVOKE: {
+      ObjString *method = READ_STRING();
+      int argCount = READ_BYTE();
+      if(!invoke(method, argCount))
+        return INTERPRET_RUNTIME_ERROR;
+      frame = &vm.frames[vm.frameCount - 1];
+      break;
+    }
       // when loading function from the constant table we
       // instead load it wrapped in a closure object rather than raw
       // function object. So we have a seperate opcode for loading
@@ -288,6 +363,54 @@ static InterpretResult run() {
       pop();
       break;
     }
+
+    case OP_CLASS: {
+      push(OBJ_VAL(newClass(READ_STRING())));
+      break;
+    }
+    case OP_METHOD: {
+      defineMethod(READ_STRING());
+      break;
+    }
+    case OP_GET_PROPERTY: {
+      // the result of expr on left of dot should be on top of stack
+      if(!IS_INSTANCE(peek(0))) {
+        runtimeError("Only instances have properties.");
+        return INTERPRET_RUNTIME_ERROR;
+      }
+
+      ObjInstance *instance = AS_INSTANCE(peek(0));
+      ObjString *name = READ_STRING();
+
+      Value value;
+      if(tableGet(&instance->fields, name, &value)) {
+        pop();
+        push(value);
+        break;
+      }
+
+      // if not found in fields maybe it is in methods
+      // if it is not method aswell, it is a  error
+      if(!bindMethod(instance->klass, name))
+        return INTERPRET_RUNTIME_ERROR;
+      break;
+    }
+    case OP_SET_PROPERTY: {
+      // peek(1) is res of expression before dot
+      // peek(0) is res of expression after equals
+      if(!IS_INSTANCE(peek(1))) {
+        runtimeError("Only instances have fields.");
+        return INTERPRET_RUNTIME_ERROR;
+      }
+
+      ObjInstance *instance = AS_INSTANCE(peek(1));
+      tableSet(&instance->fields, READ_STRING(), peek(0));
+      Value value = pop();
+      pop();
+      push(value);
+      break;
+    }
+
     case OP_RETURN: {
       Value result = pop();
       closeUpvalues(frame->slots);
@@ -360,18 +483,22 @@ void initVM() {
 
   vm.bytesAllocated = 0;
   vm.nextGC = 1024 * 1024;
-  
+
   vm.grayCount = 0;
   vm.grayCapacity = 0;
   vm.grayStack = NULL;
-  
+
   initTable(&vm.globals);
   initTable(&vm.strings);
 
+  vm.initString = NULL;
+  vm.initString = copyString("init", 4);
+  
   defineNative("clock", clockNative);
 }
 
 void freeVM() {
+  vm.initString = NULL;
   freeObjects();
   freeTable(&vm.globals);
   freeTable(&vm.strings);
