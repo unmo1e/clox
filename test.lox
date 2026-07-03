@@ -1,14 +1,20 @@
-class Oops {
-  init() {
-    this.x = "Haha";
-    fun f() {
-      print "this is not a method " + this.x;
-    }
+class Doughnut {
+  cook() {
+    print "Dunk in the fryer.";
+    this.finish("sprinkles");
+  }
 
-    this.field = f;
+  finish(ingredient) {
+    print "Finish with " + ingredient;
   }
 }
 
-var oops = Oops();
-// oops.x = "test";
-oops.field();
+class Cruller < Doughnut {
+  finish(ingredient) {
+    // No sprinkles, always icing.
+    super.finish("icing");
+  }
+}
+
+var food = Cruller();
+food.cook();

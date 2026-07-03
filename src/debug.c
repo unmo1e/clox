@@ -5,7 +5,7 @@
 #include "object.h"
 
 static int invokeInstruction(const char* name, Chunk* chunk,
-                                int offset) {
+                             int offset) {
   uint8_t constant = chunk->code[offset + 1];
   uint8_t argCount = chunk->code[offset + 2];
   printf("%-16s (%d args) %4d '", name, argCount, constant);
@@ -63,6 +63,12 @@ int disassembleInstruction(Chunk *chunk, int offset) {
 
   uint8_t instruction = chunk->code[offset];
   switch(instruction) {
+  case OP_SUPER_INVOKE:
+    return invokeInstruction("OP_SUPER_INVOKE", chunk, offset);
+  case OP_GET_SUPER:
+    return constantInstruction("OP_GET_SUPER", chunk, offset);
+  case OP_INHERIT:
+    return simpleInstruction("OP_INHERIT", offset);
   case OP_GET_PROPERTY:
     return constantInstruction("OP_GET_PROPERTY", chunk, offset);
   case OP_SET_PROPERTY:

@@ -151,7 +151,7 @@ static bool invoke(ObjString *name, int argCount) {
     runtimeError("Only instances have methods");
     return false;
   }
-  
+
   ObjInstance *instance = AS_INSTANCE(receiver);
 
   // in lox, fields have priority over methods
@@ -162,7 +162,7 @@ static bool invoke(ObjString *name, int argCount) {
     vm.stackTop[-argCount - 1] = value;
     return callValue(value, argCount);
   }
-  
+
   return invokeFromClass(instance->klass, name, argCount);
 }
 
@@ -368,6 +368,18 @@ static InterpretResult run() {
       push(OBJ_VAL(newClass(READ_STRING())));
       break;
     }
+    case OP_INHERIT: {
+      Value superclass = peek(1);
+      if(!IS_CLASS(superclass)) {
+        runtimeError("Superclass must be a class.");
+        return INTERPRET_RUNTIME_ERROR;
+      }
+
+      ObjClass *subclass = AS_CLASS(peek(0));
+      tableAddAll(&AS_CLASS(superclass)->methods, &subclass->methods);
+      pop();
+      break;
+    }
     case OP_METHOD: {
       defineMethod(READ_STRING());
       break;
@@ -408,6 +420,26 @@ static InterpretResult run() {
       Value value = pop();
       pop();
       push(value);
+      break;
+    }
+    case OP_GET_SUPER: {
+      ObjString *name = READ_STRING();
+      ObjClass *superclass = AS_CLASS(pop());
+
+      if(!bindMethod(superclass, name)) {
+        return INTERPRET_RUNTIME_ERROR;
+      }
+
+      break;
+    }
+    case OP_SUPER_INVOKE: {
+      ObjString* method = READ_STRING();
+      int argCount = READ_BYTE();
+      ObjClass* superclass = AS_CLASS(pop());
+      if (!invokeFromClass(superclass, method, argCount)) {
+        return INTERPRET_RUNTIME_ERROR;
+      }
+      frame = &vm.frames[vm.frameCount - 1];
       break;
     }
 
@@ -493,7 +525,7 @@ void initVM() {
 
   vm.initString = NULL;
   vm.initString = copyString("init", 4);
-  
+
   defineNative("clock", clockNative);
 }
 
