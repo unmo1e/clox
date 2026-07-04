@@ -1,0 +1,19 @@
+* CLox
+This is an implementation of the lox programming language. It is the result of following the book [[https://craftinginterpreters.com/][Crafting Interpreters]]. This is the implementation of clox, a bytecode + virtual machine interpreter.
+
+** Compile
+Just compile all the C files
+#+begin_src
+  $ gcc ./src/*.c -o lox
+#+end_src
+
+** Run
+To lauch the REPL
+#+begin_src
+ $ ./lox
+#+end_src
+
+To run a file
+#+begin_src
+ $ ./lox [file.lox]
+#+end_src
